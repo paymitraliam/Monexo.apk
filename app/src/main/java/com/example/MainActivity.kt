@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -51,7 +50,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,7 +57,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -115,7 +112,8 @@ val SplashBlueBackground = Color(0xFF4A8BF5)
 
 @Composable
 fun MonexoAppRoot() {
-  var showSplash by remember { mutableStateOf(true) }
+  var isSplashVisible by remember { mutableStateOf(true) }
+  var isWebViewReady by remember { mutableStateOf(false) }
 
   // Permissions launcher for Notifications, SMS, and Storage
   val permissionsLauncher = rememberLauncherForActivityResult(
@@ -146,9 +144,14 @@ fun MonexoAppRoot() {
       permissionsLauncher.launch(permissionsToRequest.toTypedArray())
     }
 
-    // Show splash screen for 2.2 seconds
-    delay(2200)
-    showSplash = false
+    // Give splash screen a minimum display time of 2 seconds
+    delay(2000)
+    // If the webview has started rendering, dismiss splash.
+    // If not yet ready, wait up to an extra 1.5s then dismiss so splash seamlessly reveals webpage
+    if (!isWebViewReady) {
+      delay(1500)
+    }
+    isSplashVisible = false
   }
 
   Column(
@@ -168,20 +171,28 @@ fun MonexoAppRoot() {
       modifier = Modifier
         .fillMaxWidth()
         .weight(1f)
+        .background(Color.White)
     ) {
-      if (showSplash) {
+      // WebView is loaded immediately in background so it's ready when splash fades out
+      MonexoWebViewScreen(
+        initialUrl = "https://monexo.wiki",
+        onFirstPageLoaded = {
+          isWebViewReady = true
+        }
+      )
+
+      if (isSplashVisible) {
         MonexoSplashScreen()
-      } else {
-        MonexoWebViewScreen(initialUrl = "https://monexo.wiki")
       }
     }
   }
 }
 
 /**
- * Splash screen reproducing user's exact screenshot design:
- * Clean bright blue canvas, centered rounded white badge with Monexo logo,
- * and bottom "Already newest version" indicator badge.
+ * Splash screen reproducing user's exact design:
+ * - Logo positioned at the TOP CENTER (elevated from middle)
+ * - Clean bright blue canvas
+ * - Bottom "Already newest version" indicator badge
  */
 @Composable
 fun MonexoSplashScreen() {
@@ -191,19 +202,19 @@ fun MonexoSplashScreen() {
       .background(SplashBlueBackground)
       .testTag("splash_screen")
   ) {
-    // Centered Monexo App Badge
+    // Top-Center Monexo App Badge (positioned prominently at the top half)
     Column(
       modifier = Modifier
-        .align(Alignment.Center)
-        .padding(horizontal = 32.dp),
+        .align(Alignment.TopCenter)
+        .padding(top = 90.dp, start = 32.dp, end = 32.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.Center
+      verticalArrangement = Arrangement.Top
     ) {
       Surface(
         modifier = Modifier
-          .size(112.dp)
-          .shadow(elevation = 8.dp, shape = RoundedCornerShape(26.dp)),
-        shape = RoundedCornerShape(26.dp),
+          .size(116.dp)
+          .shadow(elevation = 8.dp, shape = RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
         color = Color.White
       ) {
         Box(
@@ -214,8 +225,8 @@ fun MonexoSplashScreen() {
             painter = painterResource(id = R.drawable.monexo_logo),
             contentDescription = "Monexo Logo",
             modifier = Modifier
-              .size(92.dp)
-              .clip(RoundedCornerShape(18.dp))
+              .size(96.dp)
+              .clip(RoundedCornerShape(20.dp))
           )
         }
       }
@@ -260,21 +271,19 @@ fun MonexoSplashScreen() {
 
 /**
  * 100% Full Screen WebView:
- * - NO top app bar / header at all (maximum screen real estate for the website)
- * - Pure edge-to-edge web content with slim top loading indicator
+ * - Direct seamless display (no black transition screen, no top blue loading line)
  * - Full Android hardware back button gesture navigation
  * - Network error & offline recovery view
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun MonexoWebViewScreen(
-  initialUrl: String = "https://monexo.wiki"
+  initialUrl: String = "https://monexo.wiki",
+  onFirstPageLoaded: () -> Unit = {}
 ) {
   val context = LocalContext.current
   var webView by remember { mutableStateOf<WebView?>(null) }
   var canGoBack by remember { mutableStateOf(false) }
-  var progress by remember { mutableFloatStateOf(0f) }
-  var isLoading by remember { mutableStateOf(true) }
   var hasError by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf("") }
   var reloadTrigger by remember { mutableIntStateOf(0) }
@@ -299,9 +308,9 @@ fun MonexoWebViewScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
+      .background(Color.White)
   ) {
-    // Pure Fullscreen WebView
+    // Pure Fullscreen WebView - White background to prevent black flash
     AndroidView(
       modifier = Modifier
         .fillMaxSize()
@@ -312,6 +321,8 @@ fun MonexoWebViewScreen(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
           )
+
+          setBackgroundColor(android.graphics.Color.WHITE)
 
           settings.apply {
             javaScriptEnabled = true
@@ -331,23 +342,23 @@ fun MonexoWebViewScreen(
 
           webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-              progress = newProgress / 100f
-              isLoading = newProgress < 100
+              if (newProgress >= 40) {
+                onFirstPageLoaded()
+              }
             }
           }
 
           webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
               super.onPageStarted(view, url, favicon)
-              isLoading = true
               hasError = false
               canGoBack = view?.canGoBack() == true
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
               super.onPageFinished(view, url)
-              isLoading = false
               canGoBack = view?.canGoBack() == true
+              onFirstPageLoaded()
             }
 
             override fun onReceivedError(
@@ -358,7 +369,6 @@ fun MonexoWebViewScreen(
               super.onReceivedError(view, request, error)
               if (request?.isForMainFrame == true) {
                 hasError = true
-                isLoading = false
                 val description = error?.description?.toString() ?: "Failed to connect to page"
                 errorMessage = description
               }
@@ -404,24 +414,6 @@ fun MonexoWebViewScreen(
       }
     )
 
-    // Subtle loading indicator at the very top edge
-    AnimatedVisibility(
-      visible = isLoading,
-      enter = fadeIn(),
-      exit = fadeOut(),
-      modifier = Modifier.align(Alignment.TopCenter)
-    ) {
-      LinearProgressIndicator(
-        progress = { progress },
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(2.5.dp)
-          .testTag("page_loading_progress"),
-        color = SplashBlueBackground,
-        trackColor = Color.Transparent
-      )
-    }
-
     // Error / Offline Screen Overlay
     if (hasError) {
       Surface(
@@ -433,60 +425,55 @@ fun MonexoWebViewScreen(
         Column(
           modifier = Modifier
             .fillMaxSize()
-            .padding(28.dp),
+            .padding(32.dp),
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.Center
         ) {
-          Box(
-            modifier = Modifier
-              .size(72.dp)
-              .clip(CircleShape)
-              .background(MaterialTheme.colorScheme.errorContainer),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.Default.Warning,
-              contentDescription = "Error icon",
-              tint = MaterialTheme.colorScheme.error,
-              modifier = Modifier.size(36.dp)
-            )
-          }
+          Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = "Connection Error",
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(64.dp)
+          )
 
-          Spacer(modifier = Modifier.height(20.dp))
+          Spacer(modifier = Modifier.height(16.dp))
 
           Text(
-            text = "Unable to connect",
-            style = MaterialTheme.typography.titleLarge.copy(
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onBackground
-            )
+            text = "Unable to load Monexo",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
           )
 
           Spacer(modifier = Modifier.height(8.dp))
 
           Text(
-            text = errorMessage.ifBlank { "Could not load Monexo. Please check your connection." },
-            style = MaterialTheme.typography.bodyMedium.copy(
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              textAlign = TextAlign.Center
-            ),
-            modifier = Modifier.padding(horizontal = 16.dp)
+            text = errorMessage,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
           )
 
           Spacer(modifier = Modifier.height(28.dp))
 
           Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
           ) {
             Button(
               onClick = {
                 hasError = false
-                isLoading = true
                 reloadTrigger++
                 webView?.reload()
               },
-              colors = ButtonDefaults.buttonColors(containerColor = SplashBlueBackground),
-              modifier = Modifier.testTag("retry_button")
+              modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .testTag("error_retry_button"),
+              colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary
+              )
             ) {
               Icon(
                 imageVector = Icons.Default.Refresh,
@@ -500,11 +487,16 @@ fun MonexoWebViewScreen(
             Button(
               onClick = {
                 hasError = false
-                isLoading = true
                 webView?.loadUrl(initialUrl)
               },
-              colors = ButtonDefaults.filledTonalButtonColors(),
-              modifier = Modifier.testTag("home_button")
+              modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .testTag("error_home_button"),
+              colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+              )
             ) {
               Icon(
                 imageVector = Icons.Default.Home,
@@ -522,7 +514,6 @@ fun MonexoWebViewScreen(
 
   DisposableEffect(Unit) {
     onDispose {
-      webView?.stopLoading()
       webView?.destroy()
     }
   }
