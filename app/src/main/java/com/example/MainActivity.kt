@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -22,7 +23,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -75,23 +75,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    enableEdgeToEdge()
 
-    // Header (Status bar) is solid black with white icons matching user's screenshot
-    // Footer (Navigation bar) is clean white matching user's screenshot
-    WindowCompat.setDecorFitsSystemWindows(window, false)
+    // Standard Window configuration to guarantee solid black top status bar and solid white bottom navigation bar
+    window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+    window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
     window.statusBarColor = android.graphics.Color.BLACK
     window.navigationBarColor = android.graphics.Color.WHITE
-    WindowCompat.getInsetsController(window, window.decorView).apply {
-      isAppearanceLightStatusBars = false // White text/icons in top black status bar
-      isAppearanceLightNavigationBars = true // Dark navigation bar handle on white bottom
-    }
+
+    WindowCompat.setDecorFitsSystemWindows(window, true)
+
+    val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+    insetsController.isAppearanceLightStatusBars = false // White clock, battery, and 5G icons on Black status bar
+    insetsController.isAppearanceLightNavigationBars = true // Dark navigation pills on White bottom bar
 
     setContent {
       MyApplicationTheme {
@@ -154,56 +156,32 @@ fun MonexoAppRoot() {
     isSplashVisible = false
   }
 
-  Column(
+  Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(Color.Black)
+      .background(Color.White)
   ) {
-    // Top Black Header area for system status bar (where time, network, battery are shown)
-    Spacer(
-      modifier = Modifier
-        .fillMaxWidth()
-        .windowInsetsTopHeight(WindowInsets.statusBars)
-        .background(Color.Black)
-    )
-
-    // Main App & Splash Area
-    Box(
-      modifier = Modifier
-        .fillMaxWidth()
-        .weight(1f)
-        .background(Color.White)
-    ) {
-      // WebView loaded in background with pure white backdrop
-      MonexoWebViewScreen(
-        initialUrl = "https://monexo.wiki",
-        onFirstPageLoaded = {
-          isWebViewReady = true
-        }
-      )
-
-      if (isSplashVisible) {
-        MonexoSplashScreen()
+    // WebView loaded in background with pure white backdrop
+    MonexoWebViewScreen(
+      initialUrl = "https://monexo.wiki",
+      onFirstPageLoaded = {
+        isWebViewReady = true
       }
-    }
-
-    // Bottom White Navigation Bar area (matching user's screenshot where bottom is white)
-    Spacer(
-      modifier = Modifier
-        .fillMaxWidth()
-        .windowInsetsBottomHeight(WindowInsets.navigationBars)
-        .background(Color.White)
     )
+
+    if (isSplashVisible) {
+      MonexoSplashScreen()
+    }
   }
 }
 
 /**
  * Splash screen reproducing user's exact screenshot design:
- * - Black status bar header at the top (time, network, battery)
- * - White navigation bar at the bottom
- * - Compact logo at top center (~64dp badge matching user's screenshot)
+ * - Status bar at the top is solid black (showing battery, network, clock in white)
+ * - Navigation bar at the bottom is clean white
+ * - Compact logo at top center (~68dp badge)
  * - Clean bright blue canvas
- * - Bottom "Already newest version" with normal (non-bold) text matching screenshot
+ * - Bottom "Already newest version" with normal regular text
  */
 @Composable
 fun MonexoSplashScreen() {
@@ -247,7 +225,7 @@ fun MonexoSplashScreen() {
     Box(
       modifier = Modifier
         .align(Alignment.BottomCenter)
-        .padding(bottom = 54.dp)
+        .padding(bottom = 44.dp)
         .shadow(elevation = 5.dp, shape = RoundedCornerShape(14.dp))
         .clip(RoundedCornerShape(14.dp))
         .background(Color(0xE61E2124))
@@ -273,7 +251,7 @@ fun MonexoSplashScreen() {
           text = "Already newest version",
           color = Color.White,
           fontSize = 13.sp,
-          fontWeight = FontWeight.Normal // Normal regular text as in screenshot
+          fontWeight = FontWeight.Normal // Normal regular text
         )
       }
     }
@@ -386,7 +364,7 @@ fun MonexoWebViewScreen(
                 }
               }
 
-              // Create temporary webview to capture popup URL if needed
+              // Create temporary webview to capture popup URL
               val tempWebView = WebView(ctx)
               tempWebView.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(
@@ -404,7 +382,6 @@ fun MonexoWebViewScreen(
                       return true
                     } catch (_: Exception) {}
                   }
-                  // Fallback load in main webView
                   webView?.loadUrl(uri.toString())
                   return true
                 }
@@ -682,7 +659,6 @@ fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
 
   val targetTgUri: Uri = when {
     path.startsWith("+") -> {
-      // Invite link: tg://join?invite=...
       Uri.parse("tg://join?invite=" + path.substring(1))
     }
     path.startsWith("joinchat/") -> {
@@ -695,7 +671,6 @@ fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
     else -> uri
   }
 
-  // Try launching directly with tg:// scheme first
   return try {
     val tgIntent = Intent(Intent.ACTION_VIEW, targetTgUri).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -703,7 +678,6 @@ fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
     context.startActivity(tgIntent)
     true
   } catch (_: Exception) {
-    // If tg:// intent fails, launch original URI via an external browser instead of in-app WebView
     try {
       val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
