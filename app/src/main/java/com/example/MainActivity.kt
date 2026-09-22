@@ -2,12 +2,12 @@ package com.example
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
@@ -23,9 +23,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -83,7 +80,7 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
-    // Configure status bar color to pure black with white status icons (matching user's screenshot)
+    // Status bar is black with white system icons (matching user's screenshot)
     WindowCompat.setDecorFitsSystemWindows(window, false)
     window.statusBarColor = android.graphics.Color.BLACK
     WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -144,10 +141,8 @@ fun MonexoAppRoot() {
       permissionsLauncher.launch(permissionsToRequest.toTypedArray())
     }
 
-    // Give splash screen a minimum display time of 2 seconds
+    // Minimum display duration for splash
     delay(2000)
-    // If the webview has started rendering, dismiss splash.
-    // If not yet ready, wait up to an extra 1.5s then dismiss so splash seamlessly reveals webpage
     if (!isWebViewReady) {
       delay(1500)
     }
@@ -159,7 +154,7 @@ fun MonexoAppRoot() {
       .fillMaxSize()
       .background(Color.Black)
   ) {
-    // Dedicated black header area behind system status bar (time, network, battery)
+    // Black header area for system status bar (where time, network, battery are displayed)
     Spacer(
       modifier = Modifier
         .fillMaxWidth()
@@ -173,7 +168,7 @@ fun MonexoAppRoot() {
         .weight(1f)
         .background(Color.White)
     ) {
-      // WebView is loaded immediately in background so it's ready when splash fades out
+      // WebView loaded in background with pure white backdrop
       MonexoWebViewScreen(
         initialUrl = "https://monexo.wiki",
         onFirstPageLoaded = {
@@ -189,10 +184,11 @@ fun MonexoAppRoot() {
 }
 
 /**
- * Splash screen reproducing user's exact design:
- * - Logo positioned at the TOP CENTER (elevated from middle)
+ * Splash screen reproducing user's exact screenshot design:
+ * - Black status bar header at the top
+ * - Compact logo at top center (smaller size ~76dp badge matching screenshot)
  * - Clean bright blue canvas
- * - Bottom "Already newest version" indicator badge
+ * - Bottom "Already newest version" with normal (non-bold) text matching screenshot
  */
 @Composable
 fun MonexoSplashScreen() {
@@ -202,19 +198,19 @@ fun MonexoSplashScreen() {
       .background(SplashBlueBackground)
       .testTag("splash_screen")
   ) {
-    // Top-Center Monexo App Badge (positioned prominently at the top half)
+    // Top-Center Monexo App Badge (compact size matching user's screenshot)
     Column(
       modifier = Modifier
         .align(Alignment.TopCenter)
-        .padding(top = 90.dp, start = 32.dp, end = 32.dp),
+        .padding(top = 48.dp, start = 32.dp, end = 32.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Top
     ) {
       Surface(
         modifier = Modifier
-          .size(116.dp)
-          .shadow(elevation = 8.dp, shape = RoundedCornerShape(28.dp)),
-        shape = RoundedCornerShape(28.dp),
+          .size(76.dp)
+          .shadow(elevation = 6.dp, shape = RoundedCornerShape(18.dp)),
+        shape = RoundedCornerShape(18.dp),
         color = Color.White
       ) {
         Box(
@@ -225,30 +221,30 @@ fun MonexoSplashScreen() {
             painter = painterResource(id = R.drawable.monexo_logo),
             contentDescription = "Monexo Logo",
             modifier = Modifier
-              .size(96.dp)
-              .clip(RoundedCornerShape(20.dp))
+              .size(62.dp)
+              .clip(RoundedCornerShape(14.dp))
           )
         }
       }
     }
 
-    // Bottom "Already newest version" floating badge
+    // Bottom "Already newest version" floating dark pill badge with NORMAL text (non-bold)
     Box(
       modifier = Modifier
         .align(Alignment.BottomCenter)
         .padding(bottom = 54.dp)
-        .shadow(elevation = 6.dp, shape = RoundedCornerShape(20.dp))
-        .clip(RoundedCornerShape(20.dp))
-        .background(Color(0xE6212121))
-        .padding(horizontal = 18.dp, vertical = 10.dp)
+        .shadow(elevation = 5.dp, shape = RoundedCornerShape(14.dp))
+        .clip(RoundedCornerShape(14.dp))
+        .background(Color(0xE61E2124))
+        .padding(horizontal = 16.dp, vertical = 9.dp)
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
       ) {
         Surface(
-          modifier = Modifier.size(24.dp),
-          shape = RoundedCornerShape(6.dp),
+          modifier = Modifier.size(20.dp),
+          shape = RoundedCornerShape(5.dp),
           color = Color.White
         ) {
           Image(
@@ -257,12 +253,12 @@ fun MonexoSplashScreen() {
             modifier = Modifier.fillMaxSize()
           )
         }
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(9.dp))
         Text(
           text = "Already newest version",
           color = Color.White,
-          fontSize = 14.sp,
-          fontWeight = FontWeight.Medium
+          fontSize = 13.sp,
+          fontWeight = FontWeight.Normal // Normal regular text as in screenshot
         )
       }
     }
@@ -271,7 +267,9 @@ fun MonexoSplashScreen() {
 
 /**
  * 100% Full Screen WebView:
- * - Direct seamless display (no black transition screen, no top blue loading line)
+ * - Direct seamless display without black transition screen or loading bar
+ * - Direct Telegram deep linking (opens Telegram app directly instead of web preview page)
+ * - Direct WhatsApp & external app intent routing
  * - Full Android hardware back button gesture navigation
  * - Network error & offline recovery view
  */
@@ -310,7 +308,6 @@ fun MonexoWebViewScreen(
       .fillMaxSize()
       .background(Color.White)
   ) {
-    // Pure Fullscreen WebView - White background to prevent black flash
     AndroidView(
       modifier = Modifier
         .fillMaxSize()
@@ -379,9 +376,25 @@ fun MonexoWebViewScreen(
               request: WebResourceRequest?
             ): Boolean {
               val uri = request?.url ?: return false
+              val urlString = uri.toString()
               val scheme = uri.scheme?.lowercase() ?: ""
+              val host = uri.host?.lowercase() ?: ""
 
-              // Handle intent schemes or tel/mailto/sms
+              // 1. Direct Telegram Redirection (open Telegram app directly, not web preview page)
+              if (scheme == "tg" || host == "t.me" || host.endsWith(".t.me") || host == "telegram.me" || host.endsWith(".telegram.me") || host == "telegram.dog") {
+                return openTelegramDirectly(context, uri)
+              }
+
+              // 2. Direct WhatsApp Redirection
+              if (scheme == "whatsapp" || host == "wa.me" || host == "api.whatsapp.com" || host.endsWith(".whatsapp.com")) {
+                try {
+                  val intent = Intent(Intent.ACTION_VIEW, uri)
+                  context.startActivity(intent)
+                  return true
+                } catch (_: Exception) {}
+              }
+
+              // 3. Telephony, SMS, Mailto schemes
               if (scheme == "tel" || scheme == "mailto" || scheme == "sms") {
                 try {
                   val intent = Intent(Intent.ACTION_VIEW, uri)
@@ -390,11 +403,23 @@ fun MonexoWebViewScreen(
                 return true
               }
 
-              // Keep all web URLs inside the full screen WebView
+              // 4. Intent scheme (e.g. intent://...)
+              if (scheme == "intent") {
+                try {
+                  val parsedIntent = Intent.parseUri(urlString, Intent.URI_INTENT_SCHEME)
+                  context.startActivity(parsedIntent)
+                  return true
+                } catch (_: Exception) {
+                  return true
+                }
+              }
+
+              // 5. Keep all normal web browsing (monexo.wiki etc.) inside the WebView
               if (scheme == "http" || scheme == "https") {
                 return false
               }
 
+              // 6. Any other 3rd party URI
               return try {
                 val intent = Intent(Intent.ACTION_VIEW, uri)
                 context.startActivity(intent)
@@ -515,6 +540,68 @@ fun MonexoWebViewScreen(
   DisposableEffect(Unit) {
     onDispose {
       webView?.destroy()
+    }
+  }
+}
+
+/**
+ * Direct Telegram redirection helper:
+ * Converts https://t.me/username to tg://resolve?domain=username
+ * and launches Telegram app directly instead of opening Telegram's web preview page.
+ */
+fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
+  val scheme = uri.scheme?.lowercase() ?: ""
+  val host = uri.host?.lowercase() ?: ""
+
+  // If already tg:// scheme
+  if (scheme == "tg") {
+    return try {
+      val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  // If web telegram url like https://t.me/MonexoCustomerSupport or https://t.me/+invite
+  val path = uri.path?.trimStart('/') ?: ""
+
+  val targetTgUri = when {
+    path.startsWith("+") -> {
+      // Invite link: tg://join?invite=...
+      Uri.parse("tg://join?invite=" + path.substring(1))
+    }
+    path.startsWith("joinchat/") -> {
+      Uri.parse("tg://join?invite=" + path.substring("joinchat/".length))
+    }
+    path.isNotEmpty() -> {
+      // Channel or username link: tg://resolve?domain=...
+      val cleanUser = path.split("/").firstOrNull() ?: path
+      Uri.parse("tg://resolve?domain=$cleanUser")
+    }
+    else -> uri
+  }
+
+  return try {
+    // Try launching with tg:// scheme (opens official Telegram app or Telegram X)
+    val tgIntent = Intent(Intent.ACTION_VIEW, targetTgUri).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(tgIntent)
+    true
+  } catch (_: Exception) {
+    // Fallback: if Telegram app not installed, open external browser (Chrome/etc.)
+    try {
+      val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(browserIntent)
+      true
+    } catch (_: Exception) {
+      true
     }
   }
 }
