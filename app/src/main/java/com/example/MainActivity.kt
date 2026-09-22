@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Message
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -34,10 +35,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -80,12 +83,14 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
-    // Status bar is black with white system icons (matching user's screenshot)
+    // Header (Status bar) is solid black with white icons matching user's screenshot
+    // Footer (Navigation bar) is clean white matching user's screenshot
     WindowCompat.setDecorFitsSystemWindows(window, false)
     window.statusBarColor = android.graphics.Color.BLACK
+    window.navigationBarColor = android.graphics.Color.WHITE
     WindowCompat.getInsetsController(window, window.decorView).apply {
-      isAppearanceLightStatusBars = false
-      isAppearanceLightNavigationBars = false
+      isAppearanceLightStatusBars = false // White text/icons in top black status bar
+      isAppearanceLightNavigationBars = true // Dark navigation bar handle on white bottom
     }
 
     setContent {
@@ -154,7 +159,7 @@ fun MonexoAppRoot() {
       .fillMaxSize()
       .background(Color.Black)
   ) {
-    // Black header area for system status bar (where time, network, battery are displayed)
+    // Top Black Header area for system status bar (where time, network, battery are shown)
     Spacer(
       modifier = Modifier
         .fillMaxWidth()
@@ -162,6 +167,7 @@ fun MonexoAppRoot() {
         .background(Color.Black)
     )
 
+    // Main App & Splash Area
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -180,13 +186,22 @@ fun MonexoAppRoot() {
         MonexoSplashScreen()
       }
     }
+
+    // Bottom White Navigation Bar area (matching user's screenshot where bottom is white)
+    Spacer(
+      modifier = Modifier
+        .fillMaxWidth()
+        .windowInsetsBottomHeight(WindowInsets.navigationBars)
+        .background(Color.White)
+    )
   }
 }
 
 /**
  * Splash screen reproducing user's exact screenshot design:
- * - Black status bar header at the top
- * - Compact logo at top center (smaller size ~76dp badge matching screenshot)
+ * - Black status bar header at the top (time, network, battery)
+ * - White navigation bar at the bottom
+ * - Compact logo at top center (~64dp badge matching user's screenshot)
  * - Clean bright blue canvas
  * - Bottom "Already newest version" with normal (non-bold) text matching screenshot
  */
@@ -202,15 +217,15 @@ fun MonexoSplashScreen() {
     Column(
       modifier = Modifier
         .align(Alignment.TopCenter)
-        .padding(top = 48.dp, start = 32.dp, end = 32.dp),
+        .padding(top = 42.dp, start = 32.dp, end = 32.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Top
     ) {
       Surface(
         modifier = Modifier
-          .size(76.dp)
-          .shadow(elevation = 6.dp, shape = RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
+          .size(68.dp)
+          .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
         color = Color.White
       ) {
         Box(
@@ -221,8 +236,8 @@ fun MonexoSplashScreen() {
             painter = painterResource(id = R.drawable.monexo_logo),
             contentDescription = "Monexo Logo",
             modifier = Modifier
-              .size(62.dp)
-              .clip(RoundedCornerShape(14.dp))
+              .size(54.dp)
+              .clip(RoundedCornerShape(12.dp))
           )
         }
       }
@@ -270,6 +285,7 @@ fun MonexoSplashScreen() {
  * - Direct seamless display without black transition screen or loading bar
  * - Direct Telegram deep linking (opens Telegram app directly instead of web preview page)
  * - Direct WhatsApp & external app intent routing
+ * - Intercepts window.open / target="_blank" so Telegram joins don't open in-app popup
  * - Full Android hardware back button gesture navigation
  * - Network error & offline recovery view
  */
@@ -333,8 +349,10 @@ fun MonexoWebViewScreen(
             cacheMode = WebSettings.LOAD_DEFAULT
             allowFileAccess = false
             allowContentAccess = false
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            userAgentString = settings.userAgentString + " MonexoApp/1.0"
+            userAgentString = settings.userAgentString + " MonexoApp/2.3.0"
           }
 
           webChromeClient = object : WebChromeClient() {
@@ -342,6 +360,60 @@ fun MonexoWebViewScreen(
               if (newProgress >= 40) {
                 onFirstPageLoaded()
               }
+            }
+
+            // Handle window.open or target="_blank" (common for Telegram Join buttons)
+            override fun onCreateWindow(
+              view: WebView?,
+              isDialog: Boolean,
+              isUserGesture: Boolean,
+              resultMsg: Message?
+            ): Boolean {
+              val hitTestResult = view?.hitTestResult
+              val data = hitTestResult?.extra
+
+              if (!data.isNullOrEmpty()) {
+                val targetUri = Uri.parse(data)
+                if (isTelegramUrl(targetUri)) {
+                  openTelegramDirectly(context, targetUri)
+                  return false
+                }
+                if (isExternalAppUrl(targetUri)) {
+                  try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, targetUri))
+                    return false
+                  } catch (_: Exception) {}
+                }
+              }
+
+              // Create temporary webview to capture popup URL if needed
+              val tempWebView = WebView(ctx)
+              tempWebView.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                  view: WebView?,
+                  request: WebResourceRequest?
+                ): Boolean {
+                  val uri = request?.url ?: return false
+                  if (isTelegramUrl(uri)) {
+                    openTelegramDirectly(context, uri)
+                    return true
+                  }
+                  if (isExternalAppUrl(uri)) {
+                    try {
+                      context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                      return true
+                    } catch (_: Exception) {}
+                  }
+                  // Fallback load in main webView
+                  webView?.loadUrl(uri.toString())
+                  return true
+                }
+              }
+
+              val transport = resultMsg?.obj as? WebView.WebViewTransport
+              transport?.webView = tempWebView
+              resultMsg?.sendToTarget()
+              return true
             }
           }
 
@@ -376,57 +448,13 @@ fun MonexoWebViewScreen(
               request: WebResourceRequest?
             ): Boolean {
               val uri = request?.url ?: return false
-              val urlString = uri.toString()
-              val scheme = uri.scheme?.lowercase() ?: ""
-              val host = uri.host?.lowercase() ?: ""
+              return handleUrlRouting(context, uri)
+            }
 
-              // 1. Direct Telegram Redirection (open Telegram app directly, not web preview page)
-              if (scheme == "tg" || host == "t.me" || host.endsWith(".t.me") || host == "telegram.me" || host.endsWith(".telegram.me") || host == "telegram.dog") {
-                return openTelegramDirectly(context, uri)
-              }
-
-              // 2. Direct WhatsApp Redirection
-              if (scheme == "whatsapp" || host == "wa.me" || host == "api.whatsapp.com" || host.endsWith(".whatsapp.com")) {
-                try {
-                  val intent = Intent(Intent.ACTION_VIEW, uri)
-                  context.startActivity(intent)
-                  return true
-                } catch (_: Exception) {}
-              }
-
-              // 3. Telephony, SMS, Mailto schemes
-              if (scheme == "tel" || scheme == "mailto" || scheme == "sms") {
-                try {
-                  val intent = Intent(Intent.ACTION_VIEW, uri)
-                  context.startActivity(intent)
-                } catch (_: Exception) {}
-                return true
-              }
-
-              // 4. Intent scheme (e.g. intent://...)
-              if (scheme == "intent") {
-                try {
-                  val parsedIntent = Intent.parseUri(urlString, Intent.URI_INTENT_SCHEME)
-                  context.startActivity(parsedIntent)
-                  return true
-                } catch (_: Exception) {
-                  return true
-                }
-              }
-
-              // 5. Keep all normal web browsing (monexo.wiki etc.) inside the WebView
-              if (scheme == "http" || scheme == "https") {
-                return false
-              }
-
-              // 6. Any other 3rd party URI
-              return try {
-                val intent = Intent(Intent.ACTION_VIEW, uri)
-                context.startActivity(intent)
-                true
-              } catch (_: Exception) {
-                true
-              }
+            @Deprecated("Deprecated in Java")
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+              if (url.isNullOrEmpty()) return false
+              return handleUrlRouting(context, Uri.parse(url))
             }
           }
 
@@ -545,13 +573,97 @@ fun MonexoWebViewScreen(
 }
 
 /**
+ * Check if URL points to Telegram
+ */
+fun isTelegramUrl(uri: Uri): Boolean {
+  val scheme = uri.scheme?.lowercase() ?: ""
+  val host = uri.host?.lowercase() ?: ""
+  return scheme == "tg" || host == "t.me" || host.endsWith(".t.me") ||
+         host == "telegram.me" || host.endsWith(".telegram.me") || host == "telegram.dog"
+}
+
+/**
+ * Check if URL points to external messaging / dialing services
+ */
+fun isExternalAppUrl(uri: Uri): Boolean {
+  val scheme = uri.scheme?.lowercase() ?: ""
+  val host = uri.host?.lowercase() ?: ""
+  return scheme == "whatsapp" || host == "wa.me" || host == "api.whatsapp.com" ||
+         scheme == "tel" || scheme == "mailto" || scheme == "sms"
+}
+
+/**
+ * Centralized URL routing:
+ * - Directly opens Telegram app for any Telegram channel, group, or join link
+ * - Directly opens WhatsApp, dialer, SMS
+ * - Keeps internal monexo.wiki browsing inside the fullscreen WebView
+ */
+fun handleUrlRouting(context: Context, uri: Uri): Boolean {
+  val urlString = uri.toString()
+  val scheme = uri.scheme?.lowercase() ?: ""
+  val host = uri.host?.lowercase() ?: ""
+
+  // 1. Direct Telegram Redirection
+  if (isTelegramUrl(uri)) {
+    return openTelegramDirectly(context, uri)
+  }
+
+  // 2. Direct WhatsApp Redirection
+  if (scheme == "whatsapp" || host == "wa.me" || host == "api.whatsapp.com" || host.endsWith(".whatsapp.com")) {
+    return try {
+      val intent = Intent(Intent.ACTION_VIEW, uri)
+      context.startActivity(intent)
+      true
+    } catch (_: Exception) {
+      true
+    }
+  }
+
+  // 3. Telephony, SMS, Mailto schemes
+  if (scheme == "tel" || scheme == "mailto" || scheme == "sms") {
+    return try {
+      val intent = Intent(Intent.ACTION_VIEW, uri)
+      context.startActivity(intent)
+      true
+    } catch (_: Exception) {
+      true
+    }
+  }
+
+  // 4. Intent scheme (e.g. intent://...)
+  if (scheme == "intent") {
+    return try {
+      val parsedIntent = Intent.parseUri(urlString, Intent.URI_INTENT_SCHEME)
+      context.startActivity(parsedIntent)
+      true
+    } catch (_: Exception) {
+      true
+    }
+  }
+
+  // 5. Keep normal web browsing (monexo.wiki etc.) inside the WebView
+  if (scheme == "http" || scheme == "https") {
+    return false
+  }
+
+  // 6. Any other 3rd party URI
+  return try {
+    val intent = Intent(Intent.ACTION_VIEW, uri)
+    context.startActivity(intent)
+    true
+  } catch (_: Exception) {
+    true
+  }
+}
+
+/**
  * Direct Telegram redirection helper:
  * Converts https://t.me/username to tg://resolve?domain=username
- * and launches Telegram app directly instead of opening Telegram's web preview page.
+ * or https://t.me/+join_hash to tg://join?invite=join_hash
+ * and directly launches the Telegram app instead of showing the web preview page.
  */
 fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
   val scheme = uri.scheme?.lowercase() ?: ""
-  val host = uri.host?.lowercase() ?: ""
 
   // If already tg:// scheme
   if (scheme == "tg") {
@@ -566,10 +678,9 @@ fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
     }
   }
 
-  // If web telegram url like https://t.me/MonexoCustomerSupport or https://t.me/+invite
   val path = uri.path?.trimStart('/') ?: ""
 
-  val targetTgUri = when {
+  val targetTgUri: Uri = when {
     path.startsWith("+") -> {
       // Invite link: tg://join?invite=...
       Uri.parse("tg://join?invite=" + path.substring(1))
@@ -578,22 +689,21 @@ fun openTelegramDirectly(context: Context, uri: Uri): Boolean {
       Uri.parse("tg://join?invite=" + path.substring("joinchat/".length))
     }
     path.isNotEmpty() -> {
-      // Channel or username link: tg://resolve?domain=...
       val cleanUser = path.split("/").firstOrNull() ?: path
       Uri.parse("tg://resolve?domain=$cleanUser")
     }
     else -> uri
   }
 
+  // Try launching directly with tg:// scheme first
   return try {
-    // Try launching with tg:// scheme (opens official Telegram app or Telegram X)
     val tgIntent = Intent(Intent.ACTION_VIEW, targetTgUri).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     context.startActivity(tgIntent)
     true
   } catch (_: Exception) {
-    // Fallback: if Telegram app not installed, open external browser (Chrome/etc.)
+    // If tg:// intent fails, launch original URI via an external browser instead of in-app WebView
     try {
       val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
